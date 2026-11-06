@@ -58,6 +58,7 @@ classDiagram
     }
     class PeerEvaluationRepository {
         <<modified query surface>>
+        +findEvaluateeIdsBySectionIdAndWeek(sectionId, week) Set~Integer~
     }
 
     EditStudentForm --> StudentApi
@@ -74,7 +75,7 @@ classDiagram
 - **Student area, modified:** `StudentController` exposes the action and `StudentService` changes only `enabled`. `StudentRepository.deactivateIfEnabled` performs one conditional update (`enabled=true` to `false`) and returns its affected-row count, so concurrent confirmations cannot both report success. The generic `updateStudent` path no longer changes `enabled`, so it cannot bypass confirmation.
 - **Authorization, new and modified:** `StudentLifecycleAuthorizationManager` rejects callers without an instructor/admin authority, reads only the route's `studentId`, and delegates ownership checks to `StudentSecurityService`. The service admits an instructor assigned to the student's course section or the course admin who owns its course and fails closed for an unresolved id. `SecurityConfiguration` applies it to the new PATCH and composes it with `UserOwnershipAuthorizationManager` on the existing student-detail GET, so the student may still read herself while both lifecycle actors can complete step 2.
 - **Authentication, new:** `ActiveAccountJwtValidator` composes with the decoder's standard JWT validation and loads the current account by the immutable `userId` claim already carried by the token; it rejects a missing, unknown, or disabled account. Basic login continues to use `MyUserPrincipal.isEnabled()`.
-- **Evaluation, modified:** `EvaluationService` rejects a new evaluation whose evaluatee is disabled. Its course-section report includes an inactive student only when the requested week has a stored evaluation of her. Existing update behavior remains governed by BR-evaluation-editable-until-close.
+- **Evaluation, modified:** `EvaluationService` rejects a new evaluation whose evaluatee is disabled with `You cannot submit a peer evaluation for a deactivated student.` Its course-section report obtains the evaluated student ids once through `PeerEvaluationRepository.findEvaluateeIdsBySectionIdAndWeek` and includes an inactive student only when that set contains her id. Existing update behavior remains governed by BR-evaluation-editable-until-close.
 - **Error mapping, new:** `StudentAlreadyDeactivatedException` maps to `409 CONFLICT` in `ExceptionHandlerAdvice`.
 
 ## Sequence
@@ -189,7 +190,7 @@ No delta. The design reuses `PeerEvaluationUser.enabled` and the existing `Stude
 | Future login | Integration, security test | Disabled credentials cannot obtain a token. |
 | Generic-update bypass | Unit + integration | Supplying `enabled=false` to the generic update route does not change the active flag. |
 | Reminder consequence | Existing `SubmissionStatusServiceTest` plus regression run | An inactive student owes neither item and active teammates need not evaluate her. |
-| New evaluation of inactive student | Unit + integration, evaluation tests | Creation is rejected with `INVALID_ARGUMENT`; no evaluation is saved. |
+| New evaluation of inactive student | Unit + integration, evaluation tests | Creation is rejected with `INVALID_ARGUMENT` and `You cannot submit a peer evaluation for a deactivated student.`; no evaluation is saved. |
 | Saved evaluation remains editable | Unit, `EvaluationServiceTest` | An evaluation created before deactivation can still be updated while its ordinary window is open. |
 | Historical weekly report | Unit, `EvaluationServiceTest` | An inactive team member with a saved evaluation in the requested week is included with that evaluation. |
 | Later weekly report | Unit, `EvaluationServiceTest` | An inactive team member with no saved evaluation in the requested week is omitted. |
