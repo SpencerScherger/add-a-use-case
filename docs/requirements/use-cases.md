@@ -1479,6 +1479,7 @@ Details:
 
 **Associated Information:**
 - The warning in step 4 identifies every consequence governed by BR-student-deactivation-effects. Deactivation does not remove the student from the system, and the account can be reactivated in the future through UC-STU-reactivate-student: Reactivate a student. This is distinct from deletion through UC-STU-delete-student: Delete a student, which is physical and unrecoverable.
+- Access revocation applies to an already-issued session as well as to future login attempts, per FR-SEC-active-account.
 
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-reactivate-student: Reactivate a student
 **Assumptions:**
