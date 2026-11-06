@@ -42,6 +42,7 @@
       <el-table-column label="Operations" width="120">
         <template #default="{ row }">
           <el-button
+            :data-cy="`edit-student-${row.id}`"
             icon="Edit"
             circle
             plain
@@ -71,6 +72,7 @@
       <EditStudentForm
         :studentId="studentBeingEditedId"
         @close-dialog="closeDialog"
+        @student-deactivated="closeDialog"
       ></EditStudentForm>
     </el-dialog>
   </el-card>
