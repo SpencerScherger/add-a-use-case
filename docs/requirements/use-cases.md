@@ -1476,6 +1476,9 @@ Details:
 - 3a. The selected student's account is already deactivated.
   1. The system informs the course admin or instructor that no change was made.
   2. Use case ends.
+- 5a. The actor is not authorized to deactivate the selected student under BR-student-lifecycle.
+  1. The system denies the request per FR-SEC-deny-unauthorized and makes no change.
+  2. Use case ends.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle; BR-student-deactivation-effects
