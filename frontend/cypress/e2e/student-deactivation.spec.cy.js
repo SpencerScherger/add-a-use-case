@@ -15,7 +15,29 @@ const student = {
 
 describe('Deactivate a student', () => {
   beforeEach(() => {
+    cy.intercept('POST', '**/users/login', {
+      body: {
+        flag: true,
+        code: 200,
+        message: 'Login successfully',
+        data: {
+          token: 'eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDQ5NjAwMDB9.',
+          userInfo: {
+            id: 2,
+            username: 'b.gates@abc.edu',
+            firstName: 'Bill',
+            lastName: 'Gates',
+            email: 'b.gates@abc.edu',
+            enabled: true,
+            roles: 'instructor',
+            defaultCourseId: 1,
+            defaultSectionId: 1
+          }
+        }
+      }
+    }).as('login')
     cy.login('b.gates@abc.edu', '123456')
+    cy.wait('@login')
     cy.intercept('POST', '**/students/search*', {
       body: {
         flag: true,
@@ -55,6 +77,7 @@ describe('Deactivate a student', () => {
       .and('contain', 'new peer evaluations')
       .and('contain', 'weekly activity reports and peer evaluations are preserved')
       .and('contain', 'same team')
+    cy.screenshot('student-deactivation-confirmation')
   })
 
   it('makes no request when the instructor cancels', () => {
