@@ -307,6 +307,8 @@ class EvaluationServiceTest {
         given(this.clock.getZone()).willReturn(fixedClock.getZone());
 
         PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", amanda, woody, List.of(), "public comment", "private comment");
+        given(this.studentRepository.findEvaluationTargetForUpdate(this.woody.getId()))
+                .willReturn(Optional.of(this.woody));
         given(this.evaluationRepository.save(newPeerEvaluation)).willReturn(newPeerEvaluation);
 
         // When
@@ -326,6 +328,8 @@ class EvaluationServiceTest {
         this.woody.setEnabled(false);
         PeerEvaluation evaluation = new PeerEvaluation("2023-W31", this.amanda, this.woody,
                 List.of(), "public comment", "private comment");
+        given(this.studentRepository.findEvaluationTargetForUpdate(this.woody.getId()))
+                .willReturn(Optional.of(this.woody));
 
         Throwable thrown = catchThrowable(() -> this.evaluationService.addPeerEvaluation(evaluation));
 
@@ -423,6 +427,8 @@ class EvaluationServiceTest {
         given(this.clock.getZone()).willReturn(fixedClock.getZone());
 
         PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", john, eric, List.of(), "public comment", "private comment");
+        given(this.studentRepository.findEvaluationTargetForUpdate(this.eric.getId()))
+                .willReturn(Optional.of(this.eric));
         given(this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId("2023-W31", 3, 4)).willReturn(Optional.of(newPeerEvaluation));
 
         // When

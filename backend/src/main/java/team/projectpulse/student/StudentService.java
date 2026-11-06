@@ -103,16 +103,11 @@ public class StudentService {
     }
 
     public Student updateStudent(Integer studentId, Student update) {
-        Student oldStudent = this.studentRepository.findById(studentId)
+        // A field-targeted update cannot write a stale enabled value over a concurrent lifecycle command.
+        this.studentRepository.updateProfile(studentId, update.getUsername(),
+                update.getFirstName(), update.getLastName(), update.getEmail());
+        return this.studentRepository.findById(studentId)
                 .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
-
-        // Account status has its own confirmed lifecycle commands; generic updates change profile fields only.
-        oldStudent.setUsername(update.getUsername());
-        oldStudent.setFirstName(update.getFirstName());
-        oldStudent.setLastName(update.getLastName());
-        oldStudent.setEmail(update.getEmail());
-
-        return this.studentRepository.save(oldStudent);
     }
 
     public Student deactivateStudent(Integer studentId) {

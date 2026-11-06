@@ -67,9 +67,15 @@ public class EvaluationService {
             throw new PeerEvaluationIllegalArgumentException("The evaluator and evaluatee must be on the same team.");
         }
 
-        if (!newPeerEvaluation.getEvaluatee().isEnabled()) {
+        // Lock the target row until this transaction inserts the evaluation. Deactivation takes the same row's
+        // write lock, so either this submission completes while the target is active or it observes disabled.
+        Student evaluatee = this.studentRepository
+                .findEvaluationTargetForUpdate(newPeerEvaluation.getEvaluatee().getId())
+                .orElseThrow(() -> new ObjectNotFoundException("student", newPeerEvaluation.getEvaluatee().getId()));
+        if (!evaluatee.isEnabled()) {
             throw new PeerEvaluationIllegalArgumentException("You cannot submit a peer evaluation for a deactivated student.");
         }
+        newPeerEvaluation.setEvaluatee(evaluatee);
 
         // Make sure this is not a duplicate evaluation
         if (this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId(newPeerEvaluation.getWeek(), newPeerEvaluation.getEvaluator().getId(), newPeerEvaluation.getEvaluatee().getId()).isPresent()) {
