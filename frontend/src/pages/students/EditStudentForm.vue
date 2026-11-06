@@ -13,15 +13,6 @@
     <el-form-item label="Username:" prop="username">
       <el-input v-model="studentBeingEdited.username"></el-input>
     </el-form-item>
-    <el-form-item label="Status:" prop="enabled">
-      <el-switch
-        v-model="studentBeingEdited.enabled"
-        inline-prompt
-        active-text="Enabled"
-        inactive-text="Disabled"
-        style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
-      />
-    </el-form-item>
     <el-form-item label="First Name:" prop="firstName">
       <el-input v-model="studentBeingEdited.firstName"></el-input>
     </el-form-item>
@@ -34,7 +25,17 @@
     <el-form-item label="Team:" prop="teamName">
       <el-input v-model="studentBeingEdited.teamName" disabled></el-input>
     </el-form-item>
-    <div style="display: flex; justify-content: end">
+    <div class="form-actions">
+      <el-button
+        v-if="studentBeingEdited.enabled"
+        data-cy="deactivate-student"
+        type="danger"
+        plain
+        @click="confirmDeactivation"
+      >
+        Deactivate student
+      </el-button>
+      <span class="action-spacer"></span>
       <el-button @click="$emit('close-dialog')"> Cancel </el-button>
       <el-button type="primary" @click="updateExistingStudent()"> Confirm </el-button>
     </div>
@@ -42,14 +43,14 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Student } from '@/apis/student/types'
 import type { FormInstance } from 'element-plus'
-import { findStudentById, updateStudent } from '@/apis/student'
+import { deactivateStudent, findStudentById, updateStudent } from '@/apis/student'
 import { ref, onMounted } from 'vue'
 
 const { studentId } = defineProps(['studentId'])
-const emit = defineEmits(['close-dialog'])
+const emit = defineEmits(['close-dialog', 'student-deactivated'])
 
 // Note that the structure of the userData is NOT the same as the User interface since the roles are stored as an array
 const studentBeingEdited = ref<Student>({
@@ -74,7 +75,6 @@ const rules = {
       trigger: 'blur'
     }
   ],
-  enabled: [{ required: true, message: 'Please select the status of the user.', trigger: 'blur' }],
   firstName: [
     { required: true, message: 'Please provide the first name of the user.', trigger: 'blur' }
   ],
@@ -110,7 +110,6 @@ async function updateExistingStudent() {
   const updatedStudent: Student = {
     id: studentBeingEdited.value.id,
     username: studentBeingEdited.value.username,
-    enabled: studentBeingEdited.value.enabled,
     firstName: studentBeingEdited.value.firstName,
     lastName: studentBeingEdited.value.lastName,
     email: studentBeingEdited.value.email
@@ -122,6 +121,39 @@ async function updateExistingStudent() {
   ElMessage.success('Student updated successfully')
   emit('close-dialog')
 }
+
+async function confirmDeactivation() {
+  try {
+    await ElMessageBox.confirm(
+      'Deactivation immediately ends this student’s access, including the current session. ' +
+        'The student stays on the current team, stops receiving reminders, and cannot be the target of new peer evaluations. ' +
+        'Submitted weekly activity reports and peer evaluations are preserved. ' +
+        'Reactivation restores access to the same team.',
+      'Deactivate student?',
+      {
+        confirmButtonText: 'Deactivate student',
+        cancelButtonText: 'Cancel',
+        type: 'warning',
+        distinguishCancelAndClose: true
+      }
+    )
+  } catch {
+    return
+  }
+
+  await deactivateStudent(studentBeingEdited.value.id as number)
+  ElMessage.success('Student deactivated successfully')
+  emit('student-deactivated')
+}
 </script>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action-spacer {
+  flex: 1;
+}
+</style>

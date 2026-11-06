@@ -9,8 +9,6 @@ import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -105,24 +103,19 @@ public class StudentService {
     }
 
     public Student updateStudent(Integer studentId, Student update) {
-        Student oldStudent = this.studentRepository.findById(studentId)
+        // A field-targeted update cannot write a stale enabled value over a concurrent lifecycle command.
+        this.studentRepository.updateProfile(studentId, update.getUsername(),
+                update.getFirstName(), update.getLastName(), update.getEmail());
+        return this.studentRepository.findById(studentId)
                 .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
+    }
 
-        // If the user is not an admin, then the user can only update her username, first rubricName, last rubricName, and email
-        oldStudent.setUsername(update.getUsername());
-        oldStudent.setFirstName(update.getFirstName());
-        oldStudent.setLastName(update.getLastName());
-        oldStudent.setEmail(update.getEmail());
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // If the user is an admin, then the user can update all the fields
-        if (authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"))) {
-            oldStudent.setEnabled(update.isEnabled());
-//            oldStudent.setRoles(update.getRoles());
+    public Student deactivateStudent(Integer studentId) {
+        if (this.studentRepository.deactivateIfEnabled(studentId) == 0) {
+            throw new StudentAlreadyDeactivatedException();
         }
-
-        return this.studentRepository.save(oldStudent);
+        return this.studentRepository.findById(studentId)
+                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
     }
 
     public void deleteStudent(Integer studentId) {

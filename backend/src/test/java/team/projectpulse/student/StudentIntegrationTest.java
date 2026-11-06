@@ -139,6 +139,72 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void testAssignedInstructorDeactivatesStudentAndRevokesExistingSession() throws Exception {
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.message").value("Deactivate student successfully"))
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.teamId").value(1));
+
+        this.mockMvc.perform(get(this.baseUrl + "/students/4")
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.UNAUTHORIZED));
+
+        this.mockMvc.perform(post(this.baseUrl + "/users/login")
+                        .with(httpBasic("j.smith@abc.edu", "123456")))
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.UNAUTHORIZED));
+    }
+
+    @Test
+    void testCourseAdminCanViewAndDeactivateStudent() throws Exception {
+        this.mockMvc.perform(get(this.baseUrl + "/students/4")
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.id").value(4));
+
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.enabled").value(false));
+    }
+
+    @Test
+    void testRepeatedDeactivationIsConflict() throws Exception {
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(jsonPath("$.flag").value(true));
+
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.CONFLICT))
+                .andExpect(jsonPath("$.message").value("Student is already deactivated."));
+    }
+
+    @Test
+    void testUnauthorizedActorsCannotDeactivateStudent() throws Exception {
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .header(HttpHeaders.AUTHORIZATION, this.studentEricToken))
+                .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN));
+
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivation")
+                        .header(HttpHeaders.AUTHORIZATION, this.adminTimToken))
+                .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN));
+
+        this.mockMvc.perform(get(this.baseUrl + "/students/4")
+                        .header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+    @Test
     void testStudentJohnFindAnotherStudentsInfoById() throws Exception {
         this.mockMvc.perform(get(this.baseUrl + "/students/5").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
                 .andExpect(jsonPath("$.flag").value(false))
