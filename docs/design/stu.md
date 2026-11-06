@@ -50,7 +50,8 @@ classDiagram
         +generateWeeklyPeerEvaluationReportForSection(sectionId, week) WeeklyPeerEvaluationReport
     }
     class StudentRepository {
-        <<reused>>
+        <<modified query surface>>
+        +deactivateIfEnabled(id) int
     }
     class UserRepository {
         <<reused>>
@@ -70,9 +71,9 @@ classDiagram
 ```
 
 - **Frontend, modified:** `frontend/src/pages/students/EditStudentForm.vue` removes the status switch and adds a destructive action shown only when the loaded student is active. `frontend/src/apis/student/index.ts` and `types.ts` add the dedicated call and response type. `Students.vue` reloads the table after the dialog reports a completed deactivation.
-- **Student area, modified:** `StudentController` exposes the action and `StudentService` changes only `enabled`. The generic `updateStudent` path no longer changes `enabled`, so it cannot bypass confirmation.
+- **Student area, modified:** `StudentController` exposes the action and `StudentService` changes only `enabled`. `StudentRepository.deactivateIfEnabled` performs one conditional update (`enabled=true` to `false`) and returns its affected-row count, so concurrent confirmations cannot both report success. The generic `updateStudent` path no longer changes `enabled`, so it cannot bypass confirmation.
 - **Authorization, new and modified:** `StudentLifecycleAuthorizationManager` rejects callers without an instructor/admin authority, reads only the route's `studentId`, and delegates ownership checks to `StudentSecurityService`. The service admits an instructor assigned to the student's course section or the course admin who owns its course and fails closed for an unresolved id. `SecurityConfiguration` applies it to the new PATCH and composes it with `UserOwnershipAuthorizationManager` on the existing student-detail GET, so the student may still read herself while both lifecycle actors can complete step 2.
-- **Authentication, new:** `ActiveAccountJwtValidator` composes with the decoder's standard JWT validation and rejects an unknown or disabled token subject. Basic login continues to use `MyUserPrincipal.isEnabled()`.
+- **Authentication, new:** `ActiveAccountJwtValidator` composes with the decoder's standard JWT validation and loads the current account by the immutable `userId` claim already carried by the token; it rejects a missing, unknown, or disabled account. Basic login continues to use `MyUserPrincipal.isEnabled()`.
 - **Evaluation, modified:** `EvaluationService` rejects a new evaluation whose evaluatee is disabled. Its course-section report includes an inactive student only when the requested week has a stored evaluation of her. Existing update behavior remains governed by BR-evaluation-editable-until-close.
 - **Error mapping, new:** `StudentAlreadyDeactivatedException` maps to `409 CONFLICT` in `ExceptionHandlerAdvice`.
 
@@ -100,11 +101,11 @@ sequenceDiagram
         else actor is authorized
             AM->>SC: allow
             SC->>SS: deactivateStudent(studentId)
-            SS->>SR: findById(studentId)
-            alt account already inactive (3a)
+            SS->>SR: deactivateIfEnabled(studentId)
+            alt affected rows = 0 (already inactive, 3a)
                 SS-->>SPA: 409 Conflict; no change
-            else account active
-                SS->>SR: save(enabled=false)
+            else affected rows = 1
+                SS->>SR: findById(studentId)
                 SS-->>SC: Student
                 SC-->>SPA: 200 StudentDto
                 SPA-->>A: Student deactivated (step 6)
@@ -126,7 +127,7 @@ sequenceDiagram
     S->>API: Request with JWT issued before deactivation
     API->>DEC: Decode signature, timestamps, claims
     DEC->>VAL: validate(jwt)
-    VAL->>UR: findByUsername(jwt.subject)
+    VAL->>UR: findById(jwt.userId)
     UR-->>VAL: enabled=false
     VAL-->>API: validation failure
     API-->>S: 401 through bearer-token entry point
@@ -139,7 +140,7 @@ sequenceDiagram
 | `GET /api/v1/students/{studentId}` (existing, widened for step 2) | The student herself through `UserOwnershipAuthorizationManager`, or either lifecycle actor through `StudentLifecycleAuthorizationManager` | Existing path variable | Existing `200` student details | Everyone outside those relationships: `403`; unresolved id fails closed. |
 | `PATCH /api/v1/students/{studentId}/deactivation` | A course admin who owns the student's course, or an instructor assigned to her course section, enforced by `StudentLifecycleAuthorizationManager` before the API deny-all catch-all | No body; the authorized path variable is the entire command | `200` `Result` with the updated `StudentDto` and message `Deactivate student successfully` | Unrelated instructor or student: `403` and no change (5a). Already inactive: `409 CONFLICT`, `Student is already deactivated.`, and no save (3a). An unresolved id fails closed at the authorization layer and is not disclosed. |
 | `PUT /api/v1/students/{studentId}` (existing, narrowed) | Existing `UserOwnershipAuthorizationManager` rule | Existing student update payload; `enabled` is no longer applied even if supplied | Existing `200`; username, first name, last name, and email may change as today | A supplied `enabled` value is ignored. Deactivation is available only through the dedicated route. |
-| Bearer-token validation for protected requests | Any caller presenting a JWT | Existing JWT; standard signature/time validation plus lookup by subject | Validation succeeds only while the current account exists and is enabled | Unknown or disabled subject: `401` through `CustomBearerTokenAuthenticationEntryPoint`, including a token issued before deactivation (FR-SEC-active-account). |
+| Bearer-token validation for protected requests | Any caller presenting a JWT | Existing JWT; standard signature/time validation plus lookup by immutable `userId` claim | Validation succeeds only while the current account exists and is enabled | Missing, unknown, or disabled account id: `401` through `CustomBearerTokenAuthenticationEntryPoint`, including a token issued before deactivation (FR-SEC-active-account). |
 
 The frontend warning says that deactivation immediately ends access, including the current session; leaves the student on her current team; stops her reminders and prevents new peer evaluations of her; preserves her submitted weekly activity reports and peer evaluations; and lets reactivation restore access to the same team. Cancel closes the warning without calling the API.
 
@@ -147,13 +148,13 @@ The frontend warning says that deactivation immediately ends access, including t
 
 **A command endpoint, not generic update.** The dedicated `PATCH` route is the only path that changes a student's active flag, and the edit form no longer offers a status switch. Rejected: retaining `enabled` mutation in `updateStudent`, because a caller could bypass the required warning and confirmation.
 
-**Repeated deactivation is a conflict.** `StudentService` checks the current flag and throws before saving. Rejected: silent idempotence, because extension 3a requires the actor to be told that no change occurred.
+**Repeated deactivation is a conflict, including concurrent confirmation.** A conditional repository update changes the flag only while it is true; zero affected rows becomes `StudentAlreadyDeactivatedException`. Rejected: silent idempotence, because extension 3a requires the actor to be told that no change occurred; rejected: read-then-save, because two concurrent requests could both read active and both report success.
 
 **Lifecycle-specific authorization.** The new manager requires an instructor/admin authority and checks the student's course relationships. Rejected: `UserOwnershipAuthorizationManager`, because that manager deliberately admits the student herself; rejected: an instructor-role check alone, because it would admit an instructor from another course section.
 
 **The existing detail route participates in the use case.** The GET rule composes user ownership with lifecycle authority, while the PATCH uses lifecycle authority alone. Rejected: changing `UserOwnershipAuthorizationManager` globally, because its other routes have different write semantics; rejected: leaving the GET unchanged, because an owning course admin who is not assigned to the course section could deactivate through the API but could not complete step 2.
 
-**Immediate revocation through current account state.** `ActiveAccountJwtValidator` performs one indexed username lookup for every presented bearer token and composes with the decoder's standard validation. Rejected: waiting for JWT expiry, which violates FR-SEC-active-account; rejected: a token revocation table or account-version claim, which adds storage and lifecycle machinery the current scale does not need.
+**Immediate revocation through current account state.** `ActiveAccountJwtValidator` performs one primary-key lookup by the JWT's `userId` claim for every presented bearer token and composes with the decoder's standard validation. Rejected: lookup by token subject/username, because username is editable and would invalidate an otherwise-active session; rejected: waiting for JWT expiry, which violates FR-SEC-active-account; rejected: a token revocation table or account-version claim, which adds storage and lifecycle machinery the current scale does not need.
 
 **Team membership survives deactivation.** No team association is changed. Rejected: removing the student, which would erase her team context from historical course-section reports and require manual reassignment after reactivation.
 
